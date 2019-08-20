@@ -2,16 +2,13 @@ package testGenerator;
 
 import daikon.PptMap;
 import daikon.PptTopLevel;
+import org.apache.maven.model.Plugin;
 import org.apache.maven.model.PluginExecution;
 import org.codehaus.plexus.util.xml.Xpp3Dom;
 import org.codehaus.plexus.util.xml.pull.XmlPullParserException;
-import org.eclipse.aether.collection.DependencyCollectionException;
-import org.eclipse.aether.resolution.ArtifactDescriptorException;
-import org.eclipse.aether.resolution.ArtifactResolutionException;
 import predicatesGenerator.DaikonRunner;
 import utils.MavenProjectUtils;
 
-import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
@@ -25,6 +22,7 @@ public class EvosuiteRunner extends MavenProjectUtils {
 
     public EvosuiteRunner(String baseDir) throws IOException, XmlPullParserException {
         super(baseDir);
+
     }
 
     public boolean generateBaseTests() {
@@ -32,42 +30,38 @@ public class EvosuiteRunner extends MavenProjectUtils {
         try {
             addDependency("junit", "junit", "4.12");
 
-            addPlugin("org.evosuite.plugins",
-                    "evosuite-maven-plugin", "1.0.6",  null
-            );
+            Plugin pluginEvosuite=addPlugin("org.evosuite.plugins",
+                    "evosuite-maven-plugin", "1.0.6");
 
-            PluginExecution pluginExecution1= new PluginExecution();
+            PluginExecution pluginExecution = new PluginExecution();
+            final Xpp3Dom configuration1 = new Xpp3Dom("configuration");
+            final Xpp3Dom timeout = new Xpp3Dom("global_timeout");
+            timeout.setValue("30");
+            configuration1.addChild(timeout);
+            pluginExecution.setConfiguration(configuration1);
+
+            addPluginExecution(pluginEvosuite, pluginExecution);
+
+            PluginExecution pluginExecution1 = new PluginExecution();
             pluginExecution1.setPhase("generate-test-sources");
 
-            List<String> goals = new ArrayList(){{add("add-test-source");}};
+            List<String> goals = new ArrayList<String>() {{
+                add("add-test-source");
+            }};
 
             pluginExecution1.setGoals(goals);
 
-
-/*            <plugin>
-        <groupId>org.codehaus.mojo</groupId>
-        <artifactId>build-helper-maven-plugin</artifactId>
-        <version>1.8</version>
-        <executions>
-          <execution>
-            <id>add-source</id>
-            <phase>generate-sources</phase>
-            <goals><goal>add-test-source</goal></goals>
-            <configuration><sources><source>.evosuite/best-tests</source></sources></configuration>
-          </execution>
-        </executions>
-      </plugin>
-            */
             final Xpp3Dom configuration = new Xpp3Dom("configuration");
             final Xpp3Dom quiet = new Xpp3Dom("sources");
             Xpp3Dom source = new Xpp3Dom("source");
             quiet.addChild(source);
-            source.setValue(".evosuite/best-tests");
+            source.setValue(".evosuite/best-tests/selected");
             configuration.addChild(quiet);
 
             pluginExecution1.setConfiguration(configuration);
 
-            addPlugin("org.codehaus.mojo", "build-helper-maven-plugin", "1.4", pluginExecution1);
+            Plugin plugin = addPlugin("org.codehaus.mojo", "build-helper-maven-plugin", "1.4");
+            addPluginExecution(plugin, pluginExecution1);
         } catch (IOException | XmlPullParserException e) {
             logger.severe(e.getMessage());
             return false;
@@ -87,7 +81,7 @@ public class EvosuiteRunner extends MavenProjectUtils {
     }
 
 
-    public static boolean generateAdoptedTests(String pathToPomFolder){
+    public static boolean generateAdoptedTests(String pathToPomFolder) {
 
         EvosuiteRunner evosuiteRunner = null;
         try {
@@ -99,7 +93,7 @@ public class EvosuiteRunner extends MavenProjectUtils {
 
         boolean result = evosuiteRunner.generateBaseTests();
 
-        if(!result)
+        if (!result)
             return result;
 
         SimpleTestsDownGrader simpleTestsDownGrader = null;
@@ -114,27 +108,25 @@ public class EvosuiteRunner extends MavenProjectUtils {
     }
 
 
-    public static void main(String[] args) throws IOException, XmlPullParserException,
-            DependencyCollectionException, ArtifactDescriptorException, ArtifactResolutionException {
+    public static void main(String[] args) {
 
         String baseDir = "/home/suntrie/IdeaProjects/jackson-example/jackson-example";
 
         generateAdoptedTests(baseDir);
 
-        /*
-        *	<groupId>com.fasterxml.jackson.core</groupId>
-			<artifactId>jackson-databind</artifactId>
-			<version>2.2.3</version>
-        * */
+        /*try {
+            PptMap pptMap = new DaikonRunner(baseDir).generateInvariantsPptMap("com.fasterxml.jackson.core:jackson-databind:2.2.3");
 
-        PptMap pptMap = new DaikonRunner(baseDir).generateInvariantsPptMap("com.fasterxml.jackson.core:jackson-databind:2.2.3");
+            for (PptTopLevel ppt : pptMap.all_ppts()) {
+                if (ppt.getInvariants().size() != 0)
+                    System.out.print("");
+            }
 
-        for (PptTopLevel ppt : pptMap.all_ppts()) {
-            if (ppt.getInvariants().size() != 0)
-                System.out.print("");
-        }
-
-        System.out.println("");
+            System.out.println("");
+        } catch (IOException | XmlPullParserException e) {
+            logger.severe(e.getMessage());
+            //TODO: ret val
+        }*/
     }
 
 }

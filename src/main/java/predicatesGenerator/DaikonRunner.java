@@ -10,9 +10,6 @@ import org.apache.maven.model.PluginExecution;
 import org.apache.maven.model.io.xpp3.MavenXpp3Reader;
 import org.codehaus.plexus.util.xml.Xpp3Dom;
 import org.codehaus.plexus.util.xml.pull.XmlPullParserException;
-import org.eclipse.aether.collection.DependencyCollectionException;
-import org.eclipse.aether.resolution.ArtifactDescriptorException;
-import org.eclipse.aether.resolution.ArtifactResolutionException;
 import utils.MavenProjectUtils;
 
 import java.io.File;
@@ -32,40 +29,6 @@ public class DaikonRunner extends MavenProjectUtils {
 
     public DaikonRunner(String baseDir) throws IOException, XmlPullParserException {
         super(baseDir);
-
-        PluginExecution pluginExecution1= new PluginExecution();
-        pluginExecution1.setPhase("compile");
-        pluginExecution1.setId("compile");
-
-        final Xpp3Dom configuration = new Xpp3Dom("configuration");
-        final Xpp3Dom quiet = new Xpp3Dom("debug");
-        quiet.setValue("true");
-        configuration.addChild(quiet);
-
-        pluginExecution1.setConfiguration(configuration);
-
-        PluginExecution pluginExecution2= new PluginExecution();
-        pluginExecution2.setPhase("test-compile");
-        pluginExecution1.setId("test-compile");
-
-        pluginExecution2.setConfiguration(configuration);
-
-        MavenXpp3Reader reader = new MavenXpp3Reader();
-
-        File pomFile = new File(baseDir, "/pom.xml");
-        Model model = reader.read(new FileInputStream(pomFile));
-
-        String compilerVersion = null;
-
-        for (Plugin plugin : model.getBuild().getPlugins()) {
-            if (plugin.getGroupId().contains("org.apache.maven.plugins") &&
-                    plugin.getArtifactId().contains("maven-compiler-plugin")) {
-                compilerVersion = plugin.getVersion();
-            }
-        }
-
-        addPlugin("org.apache.maven.plugins", "maven-compiler-plugin",
-                compilerVersion ==null? "3.8.1":compilerVersion, pluginExecution1, pluginExecution2);
     }
 
 
@@ -85,8 +48,8 @@ public class DaikonRunner extends MavenProjectUtils {
     }
 
 
-    private Path generateDataForExploration(String libraryCoords) throws IOException, XmlPullParserException,
-            DependencyCollectionException, ArtifactDescriptorException, ArtifactResolutionException {
+    private Optional<Path> generateDataForExploration(String libraryCoords) throws IOException, XmlPullParserException
+    {
 
         AetherTreeConstructor aetherTreeConstructor = new AetherTreeConstructor
                 ("/home/suntrie/.m2/repository");   //TODO: config
@@ -96,8 +59,12 @@ public class DaikonRunner extends MavenProjectUtils {
         Set<String> filters=new HashSet<>();
         filters.add("java.lang");
 
-        Set<Class> libraryClasses=aetherTreeConstructor.getPackageClasses(
+        Optional<Set<Class>> libraryClasses=aetherTreeConstructor.getPackageClasses(
                 libraryCoords, filters);
+
+
+        if (!libraryClasses.isPresent())
+            return Optional.empty();
 
 
         Path dTracePath = null, mainClassPath;
@@ -105,7 +72,7 @@ public class DaikonRunner extends MavenProjectUtils {
         Set<Path> drivers = fileSearch(".*Driver.*\\.class", projectDirs.get("testOutputDirectory"));
 
         if (!drivers.iterator().hasNext()) {
-            return dTracePath;
+            return Optional.ofNullable(dTracePath);
         }else{
             mainClassPath = drivers.iterator().next();
         }
@@ -139,7 +106,7 @@ public class DaikonRunner extends MavenProjectUtils {
 
 
         List<String> pptSelectPatterns = new ArrayList<String>(){{
-            for (Class aClass: libraryClasses){
+            for (Class aClass: libraryClasses.get()){
              add("--ppt_select_pattern");
              add(aClass.getCanonicalName());
         }}};
@@ -147,7 +114,7 @@ public class DaikonRunner extends MavenProjectUtils {
         cmd.addAll(pptSelectPatterns);
 
         if (!executeTerminal(String.join(" ", cmd))) {
-            return dTracePath;
+            return Optional.ofNullable(dTracePath);
         }
 
         cmd.clear();
@@ -167,12 +134,12 @@ public class DaikonRunner extends MavenProjectUtils {
         cmd.add(mainClassName);
 
         if (!executeTerminal(String.join(" ", cmd))) {
-            return dTracePath;
+            return Optional.ofNullable(dTracePath);
         }
 
         dTracePath = Paths.get(pathToClassDirectory, traceFileName);
 
-        return dTracePath;
+        return Optional.ofNullable(dTracePath);
     }
 
     private PptMap getInvariantsPptMap(Path dataTraceFullPath) {
@@ -192,8 +159,7 @@ public class DaikonRunner extends MavenProjectUtils {
         return ppts;
     }
 
-    public PptMap generateInvariantsPptMap(String libraryCoords) throws IOException, XmlPullParserException,
-            DependencyCollectionException, ArtifactDescriptorException, ArtifactResolutionException {
+    public PptMap generateInvariantsPptMap(String libraryCoords) throws IOException, XmlPullParserException {
 
         PluginExecution pluginExecution = new PluginExecution();
         pluginExecution.addGoal("build-classpath");
@@ -208,19 +174,20 @@ public class DaikonRunner extends MavenProjectUtils {
 
         pluginExecution.setConfiguration(configuration);
 
-        addPlugin("org.apache.maven.plugins",
-                "maven-dependency-plugin","2.9", pluginExecution
-        );
+        Plugin plugin = addPlugin("org.apache.maven.plugins",
+                "maven-dependency-plugin","2.9");
+
+        addPluginExecution(plugin, pluginExecution);
 
         executeMaven(projectDirs.get("baseDir"),
-                new String[]{ "test-compile"}); //later, than just 'compile'
+                new String[]{ "test-compile","--fail-never"}); //later, than just 'compile'
 
-        Path pathToDataTraceFile = this.generateDataForExploration(libraryCoords);
+        Optional<Path> pathToDataTraceFile = this.generateDataForExploration(libraryCoords);
 
-        if (pathToDataTraceFile==null)
+        if (!pathToDataTraceFile.isPresent())
             return null;
 
-        return this.getInvariantsPptMap(pathToDataTraceFile);
+        return this.getInvariantsPptMap(pathToDataTraceFile.get());
     };
 
 }

@@ -12,13 +12,14 @@ import com.github.javaparser.ast.stmt.ExpressionStmt;
 import com.github.javaparser.ast.stmt.Statement;
 import com.github.javaparser.ast.type.ClassOrInterfaceType;
 import com.github.javaparser.ast.visitor.VoidVisitorAdapter;
-import org.apache.maven.model.Dependency;
-import org.apache.maven.model.Model;
-import org.apache.maven.model.io.xpp3.MavenXpp3Reader;
+import org.apache.maven.model.PluginExecution;
 import org.codehaus.plexus.util.xml.pull.XmlPullParserException;
 import utils.MavenProjectUtils;
 
-import java.io.*;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -30,9 +31,11 @@ import java.util.stream.Collectors;
 
 import static java.nio.file.StandardOpenOption.CREATE;
 import static java.nio.file.StandardOpenOption.TRUNCATE_EXISTING;
+import static utils.CommandExecutors.executeMaven;
 import static utils.CommandExecutors.fileSearch;
 
 public class SimpleTestsDownGrader extends MavenProjectUtils {
+
 
     private static Logger logger = Logger.getLogger(SimpleTestsDownGrader.class.getSimpleName());
 
@@ -46,6 +49,8 @@ public class SimpleTestsDownGrader extends MavenProjectUtils {
 
     private static final String RUNNER_CLASS_NAME_POSTFIX = "_scaffolding";
 
+
+    private PluginExecution compilerPluginExecution = null;
     private static Set<Class> annotationClasses = new HashSet<Class>() {{
         add(org.junit.Test.class);
         add(org.junit.BeforeClass.class);
@@ -54,7 +59,6 @@ public class SimpleTestsDownGrader extends MavenProjectUtils {
         add(org.junit.After.class);
         add(org.junit.Ignore.class);
     }};
-
 
     public SimpleTestsDownGrader(Path baseDir) throws IOException, XmlPullParserException {
 
@@ -65,29 +69,31 @@ public class SimpleTestsDownGrader extends MavenProjectUtils {
         if (pathsToTestSourceFiles.size() == 0)
             throw new IllegalArgumentException("Tests folder is empty");
 
-        Long timestamp = System.currentTimeMillis();
 
         this.testDriverClassName = "GeneratedTestDriver_" + timestamp;
         this.testDriverPackageName = "generatedTests_" + timestamp;
 
+        this.compilerPluginExecution = this.addCompilerPlugin(baseDir.toAbsolutePath().toString());
+
     }
 
-    public boolean createExecutableTestSuite() {
-
-        try {
-            modifyDependencyVersion();
-        } catch (IOException | XmlPullParserException e) {
-            logger.severe(e.getMessage());
-            return false;
-        }
+    public boolean createExecutableTestSuite(){
 
         MethodDeclaration testDriverMethodDeclaration = prepareTestDriverCompilationUnit(testDriverClassName, testDriverPackageName);
 
-        for (Path path : this.pathsToTestSourceFiles) {
+
+        Map<Path, AnnotationVisitor> testFileDescriptors = new HashMap<>();
+
+        Iterator<Path> pathIterator = pathsToTestSourceFiles.iterator();
+
+        while(pathIterator.hasNext()) {
+
+            Path path = pathIterator.next();
 
             if (path.toString().endsWith(RUNNER_CLASS_NAME_POSTFIX + ".java")) {
                 try {
                     Files.delete(path);
+                    pathIterator.remove();
                 } catch (IOException e) {
                     logger.severe(e.getMessage());
                     return false;
@@ -120,10 +126,62 @@ public class SimpleTestsDownGrader extends MavenProjectUtils {
                     return false;
                 }
 
-                addMethodCallsToDriverClass(annotationVisitor, testDriverMethodDeclaration);
+                testFileDescriptors.put(path, annotationVisitor);
+                //annotationVisitors.add(annotationVisitor);
+                //addMethodCallsToDriverClass(annotationVisitor, testDriverMethodDeclaration);
 
 
             }
+        }
+
+        //mvn
+        //addMCTDC
+
+        Boolean result = executeMaven(projectDirs.get("baseDir"),
+                new String[]{"compile"});
+
+        if (!result)
+            return false;
+
+        Path newBase = null;
+        try {
+            newBase = Files.createDirectories(Paths.get(getEvosuiteTestsFolder().concat("/selected")));
+        } catch (IOException e) {
+            logger.severe(e.getMessage());
+            return false;
+        }
+
+        for (Path path : this.pathsToTestSourceFiles) {
+
+            String relative = new File(getEvosuiteTestsFolder()).toURI().relativize(path.getParent().toUri()).getPath();
+
+            Path movedFileFolderPath = null;
+            Path movedFilePath = null;
+            try {
+                movedFileFolderPath = Files.createDirectories(Paths.get(newBase.toString().concat("/").concat(relative)));
+                movedFilePath = Paths.get(movedFileFolderPath.toString(),path.getFileName().toString());
+                Files.move(path, movedFilePath);
+
+            } catch (IOException e) {
+                logger.severe(e.getMessage());
+            }
+
+            Boolean testResult = executeMaven(projectDirs.get("baseDir"),
+                    new String[]{"test-compile"});
+
+            if (!testResult) {
+                try {
+                    Files.delete(movedFilePath);
+                } catch (IOException e) {
+                    logger.severe(e.getMessage());
+                    return false;
+                }
+                testFileDescriptors.remove(path);
+            }
+        }
+
+        for (AnnotationVisitor annotationVisitor: testFileDescriptors.values()){
+            addMethodCallsToDriverClass(annotationVisitor, testDriverMethodDeclaration);
         }
 
         Path packagePath = Paths.get(getEvosuiteTestsFolder() + File.separator + testDriverPackageName);
@@ -172,7 +230,7 @@ public class SimpleTestsDownGrader extends MavenProjectUtils {
         annotationVisitor.setUp = setUp;
         annotationVisitor.tearDown = tearDown;
 
-        correctInheritance(annotationVisitor);
+        //correctInheritance(annotationVisitor);
 
         addImportStatement(annotationVisitor, false, compilationUnit);
 
@@ -206,26 +264,7 @@ public class SimpleTestsDownGrader extends MavenProjectUtils {
         }
     }
 
-    private void modifyDependencyVersion() throws IOException, XmlPullParserException {
-        MavenXpp3Reader reader = new MavenXpp3Reader();
 
-        File pomFile = new File(String.valueOf(this.projectDirs.get("baseDir")), "/pom.xml");
-        Model model = reader.read(new FileInputStream(pomFile));
-
-        boolean flag = false;
-
-        for (Dependency dependency : model.getDependencies()) {
-            if (dependency.getGroupId().contains("junit") &&
-                    dependency.getArtifactId().contains("junit")) {
-                dependency.setVersion("3.8.2");
-                flag = true;
-            }
-        }
-
-        if (!flag) {
-            addDependency("junit", "junit", "3.8.2");
-        }
-    }
 
     private MethodDeclaration mergeFrameMethods(Set<MethodDeclaration> methods, String methodName) {
 
@@ -297,6 +336,12 @@ public class SimpleTestsDownGrader extends MavenProjectUtils {
                     (classOrInterfaceDeclaration.getNameAsString()));
         }
 
+        if (!driverClass) {
+            for (ImportDeclaration importDeclaration : annotationVisitor.nodesToImport) {
+                targetUnit.addImport(importDeclaration);
+            }
+        }
+
     }
 
     private void addMethodCallsToMethodDeclaration(Set<MethodDeclaration> methodDeclarations,
@@ -322,6 +367,8 @@ public class SimpleTestsDownGrader extends MavenProjectUtils {
 
     private void addObjectMethodCallsToMethodDeclaration(Set<MethodDeclaration> methodDeclarations, MethodDeclaration testDriverMethodDeclaration,
                                                          MethodDeclaration setUp, MethodDeclaration tearDown) {
+
+
         for (MethodDeclaration methodDeclaration : methodDeclarations) {
 
             ClassOrInterfaceType classOrInterfaceType = getClassOrInterfaceType(methodDeclaration);
@@ -330,8 +377,12 @@ public class SimpleTestsDownGrader extends MavenProjectUtils {
                     classOrInterfaceType, new NodeList<Expression>());
 
             VariableDeclarationExpr variableDeclarationExpr = new VariableDeclarationExpr
-                    (new VariableDeclarator(classOrInterfaceType, "testObj_" + System.currentTimeMillis(),
+                    (new VariableDeclarator(classOrInterfaceType, "testObj_" + incCounter,
                             objectCreationExpr));
+
+            incCounter++;
+
+            System.out.println(incCounter);
 
             testDriverMethodDeclaration.setBody(
                     getTestDriverMethodBody(testDriverMethodDeclaration).
@@ -381,6 +432,7 @@ public class SimpleTestsDownGrader extends MavenProjectUtils {
         private MethodDeclaration setUp, tearDown;
 
         private List<Node> nodesToRemove = new ArrayList<>();
+        private List<ImportDeclaration> nodesToImport = new ArrayList<>();
 
 
         private final Set<ClassOrInterfaceDeclaration> frameworkClasses =
@@ -465,6 +517,11 @@ public class SimpleTestsDownGrader extends MavenProjectUtils {
         @Override
         public void visit(ImportDeclaration n, Void arg) {
             super.visit(n, arg);
+
+            if (!n.getName().toString().contains("org.evosuite")) {
+                nodesToImport.add(n);
+            }
+
             nodesToRemove.add(n);
         }
 

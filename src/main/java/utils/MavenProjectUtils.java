@@ -10,6 +10,7 @@ import java.io.*;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.stream.Collectors;
@@ -24,8 +25,18 @@ public abstract class MavenProjectUtils {
 
     protected Map<String, Path> projectDirs = new HashMap<>();
 
+
+    protected Long timestamp = System.currentTimeMillis();
+    protected Long incCounter = timestamp;
+    protected File pomFile;
+    protected Model model;
+
     public MavenProjectUtils(String baseDir) throws IOException, XmlPullParserException {
         projectDirs.put("baseDir", Paths.get(baseDir));
+
+        pomFile = new File(baseDir, "/pom.xml");
+        MavenXpp3Reader reader = new MavenXpp3Reader();
+        model = reader.read(new FileInputStream(pomFile));
         initializeTestsDir();
     }
 
@@ -43,9 +54,9 @@ public abstract class MavenProjectUtils {
 
         pluginExecution.setConfiguration(configuration);
 
-        addPlugin("org.codehaus.mojo", "properties-maven-plugin", "1.0.0", pluginExecution
-        );  //TODO: probably, through parent hierarchy
+        Plugin plugin = addPlugin("org.codehaus.mojo", "properties-maven-plugin", "1.0.0");  //TODO: probably, through parent hierarchy
 
+        addPluginExecution(plugin, pluginExecution);
 
         addProperties(new HashMap<String, String>() {{
             put("outputDirectory", "${project.build.outputDirectory}");
@@ -65,30 +76,15 @@ public abstract class MavenProjectUtils {
 
 
     protected interface GeneratorFunction {
-        public void generateMavenObject(Model model, String groupId, String artifactId, String version);
+        public void generateMavenObject(Model model, String groupId, String artifactId, String version) throws IOException;
     }
 
-    protected String getMavenCoords() throws IOException, XmlPullParserException {
-        MavenXpp3Reader reader = new MavenXpp3Reader();
-
-        String baseDir = String.valueOf(projectDirs.get("baseDir"));
-
-        File pomFile = new File(baseDir, "/pom.xml");
-        Model model = reader.read(new FileInputStream(pomFile));
-
-        return model.getGroupId()+":"+model.getArtifactId()+":"+model.getVersion();
-
-
+    protected String getMavenCoords() {
+        return model.getGroupId() + ":" + model.getArtifactId() + ":" + model.getVersion();
     }
 
     protected void generateAndSaveMavenObject(GeneratorFunction generatorFunction,
                                               String groupId, String artifactId, String version) throws IOException, XmlPullParserException {
-        MavenXpp3Reader reader = new MavenXpp3Reader();
-
-        String baseDir = String.valueOf(projectDirs.get("baseDir"));
-
-        File pomFile = new File(baseDir, "/pom.xml");
-        Model model = reader.read(new FileInputStream(pomFile));
 
         generatorFunction.generateMavenObject(model, groupId, artifactId, version);
 
@@ -101,7 +97,6 @@ public abstract class MavenProjectUtils {
     public void addDependency(String groupId, String artifactId, String version) throws IOException, XmlPullParserException {
 
 
-
         generateAndSaveMavenObject((model, groupId1, artifactId1, version1) -> {
             Dependency dependency = new Dependency();
             dependency.setGroupId(groupId1);
@@ -110,8 +105,9 @@ public abstract class MavenProjectUtils {
 
             boolean previous = false;
 
-            for(Dependency dependency1: model.getDependencies()){
-                if (dependency1.equals(dependency)){
+            for (Dependency dependency1 : model.getDependencies()) {
+                if (dependency1.getGroupId().equals(dependency.getGroupId())&&
+                        dependency1.getArtifactId().equals(dependency.getArtifactId())) {
                     dependency.setVersion(version1);
                     previous = true;
                     break;
@@ -125,7 +121,9 @@ public abstract class MavenProjectUtils {
     }
 
 
-    protected void addPlugin(String groupId, String artifactId, String version, PluginExecution... pluginExecutions) throws IOException, XmlPullParserException {
+    protected Plugin addPlugin(String groupId, String artifactId, String version) throws IOException, XmlPullParserException {
+
+        final Plugin[] result = {null};
 
         generateAndSaveMavenObject((model, groupId1, artifactId1, version1) -> {
             Plugin plugin = new Plugin();
@@ -140,33 +138,58 @@ public abstract class MavenProjectUtils {
 
             if (!model.getBuild().getPlugins().contains(plugin)) {
                 model.getBuild().addPlugin(plugin);
-            }else{
-                for (Plugin plugin1: model.getBuild().getPlugins()){
-                    if (plugin1.equals(plugin)){
-                        plugin = plugin1;
-                        break;
+                result[0] = plugin;
+            } else {
+
+               for (Plugin plugin1 : model.getBuild().getPlugins()) {
+                    if (plugin1.equals(plugin)) {
+                        result[0] =plugin;
+                        return;
                     }
                 }
             }
 
-            if (pluginExecutions != null) {
-                for (PluginExecution pluginExecution : pluginExecutions)
-                    if (!plugin.getExecutions().stream().map(PluginExecution::getPhase)
-                            .collect(Collectors.toSet()).contains(pluginExecution.getPhase())) {
-                    plugin.addExecution(pluginExecution);
-                }
-            }
 
         }, groupId, artifactId, version);
+
+        return result[0];
+    }
+
+    protected PluginExecution addPluginExecution(Plugin plugin, PluginExecution pluginExecution) throws IOException, XmlPullParserException {
+
+        generateAndSaveMavenObject((model, groupId1, artifactId1, version1) -> {
+
+            Plugin pomPlugin = null;
+
+            Build build = model.getBuild();
+
+            if (build == null)
+                throw  new  IOException();
+
+            if (!model.getBuild().getPlugins().contains(plugin)) {
+                throw  new  IOException();
+            } else {
+
+                for (Plugin plugin1 : model.getBuild().getPlugins()) {
+                    if (plugin1.equals(plugin)) {
+                        pomPlugin = plugin1;
+                    }
+                }
+
+                if (pomPlugin==null)
+                    throw new IOException("No such plugin");
+
+                pluginExecution.setId(String.valueOf(incCounter));
+                incCounter++;
+                pomPlugin.addExecution(pluginExecution);
+
+            }
+        }, null, null, null);
+        return  pluginExecution;
     }
 
 
     private void addProperties(Map<String, String> additionalProperties) throws IOException, XmlPullParserException {
-
-        MavenXpp3Reader reader = new MavenXpp3Reader();
-        String baseDir = String.valueOf(projectDirs.get("baseDir"));
-        File pomFile = new File(baseDir, "/pom.xml");
-        Model model = reader.read(new FileInputStream(pomFile));
 
         Properties properties = model.getProperties();
 
@@ -181,7 +204,59 @@ public abstract class MavenProjectUtils {
         writer.write(new FileOutputStream(pomFile), model);
     }
 
-    protected String getEvosuiteTestsFolder(){
+    protected String getEvosuiteTestsFolder() {
         return String.valueOf(projectDirs.get("testSourceDirectory"));
+    }
+
+    protected PluginExecution addCompilerPlugin(String baseDir) throws IOException, XmlPullParserException {
+        PluginExecution pluginExecution1 = new PluginExecution();
+        pluginExecution1.setPhase("compile");
+
+        final Xpp3Dom configuration = new Xpp3Dom("configuration");
+        final Xpp3Dom quiet = new Xpp3Dom("debug");
+        quiet.setValue("true");
+        configuration.addChild(quiet);
+
+        PluginExecution pluginExecution2 = new PluginExecution();
+        pluginExecution2.setPhase("test-compile");
+
+        String compilerVersion = null;
+        Xpp3Dom target = null;
+        Xpp3Dom source = null;
+
+        for (Plugin plugin : model.getBuild().getPlugins()) {
+            if (plugin.getGroupId().contains("org.apache.maven.plugins") &&
+                    plugin.getArtifactId().contains("maven-compiler-plugin")) {
+                compilerVersion = plugin.getVersion();
+
+                Xpp3Dom configurationEx = (Xpp3Dom) plugin.getConfiguration();
+
+
+                if (configurationEx!= null){
+                target = configurationEx.getChild("target");
+                source = configurationEx.getChild("source");}
+            }
+        }
+
+        if (source == null) {
+            final Xpp3Dom quiet2 = new Xpp3Dom("source");
+            quiet2.setValue("1.8");
+            configuration.addChild(quiet2);
+        }
+
+        if (target == null) {
+            final Xpp3Dom quiet3 = new Xpp3Dom("target");
+            quiet3.setValue("1.8");
+            configuration.addChild(quiet3);
+        }
+
+        pluginExecution1.setConfiguration(configuration);
+        pluginExecution2.setConfiguration(configuration);
+
+        Plugin plugin = addPlugin("org.apache.maven.plugins", "maven-compiler-plugin",
+                compilerVersion == null ? "3.8.1" : compilerVersion);
+
+        addPluginExecution(plugin, pluginExecution1);
+        return addPluginExecution(plugin, pluginExecution2);
     }
 }
