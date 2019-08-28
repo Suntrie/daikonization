@@ -1,9 +1,0 @@
-<component name="libraryTable">
-  <library name="evosuite-master-1.0.6-tests">
-    <CLASSES>
-      <root url="jar://$PROJECT_DIR$/lib/evosuite-master-1.0.6-tests.jar!/" />
-    </CLASSES>
-    <JAVADOC />
-    <SOURCES />
-  </library>
-</component>

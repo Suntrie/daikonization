@@ -1,18 +1,18 @@
 <component name="libraryTable">
   <library name="daikon-5.7">
     <CLASSES>
-      <root url="file://$USER_HOME$/daikon-5.7.2" />
+      <root url="file://$USER_HOME$/new_daikon/daikon-5.7.2" />
     </CLASSES>
     <JAVADOC>
-      <root url="file://$USER_HOME$/daikon-5.7.2/java/api" />
+      <root url="file://$USER_HOME$/new_daikon/daikon-5.7.2/java/api" />
     </JAVADOC>
     <SOURCES>
-      <root url="file://$USER_HOME$/daikon-5.7.2/examples/java-examples/QueueAr" />
-      <root url="file://$USER_HOME$/daikon-5.7.2/examples/java-examples/StackAr" />
-      <root url="file://$USER_HOME$/daikon-5.7.2/java" />
-      <root url="file://$USER_HOME$/daikon-5.7.2" />
+      <root url="file://$USER_HOME$/new_daikon/daikon-5.7.2/examples/java-examples/QueueAr" />
+      <root url="file://$USER_HOME$/new_daikon/daikon-5.7.2/examples/java-examples/StackAr" />
+      <root url="file://$USER_HOME$/new_daikon/daikon-5.7.2/java" />
+      <root url="file://$USER_HOME$/new_daikon/daikon-5.7.2" />
     </SOURCES>
-    <jarDirectory url="file://$USER_HOME$/daikon-5.7.2" recursive="false" />
-    <jarDirectory url="file://$USER_HOME$/daikon-5.7.2" recursive="false" type="SOURCES" />
+    <jarDirectory url="file://$USER_HOME$/new_daikon/daikon-5.7.2" recursive="false" />
+    <jarDirectory url="file://$USER_HOME$/new_daikon/daikon-5.7.2" recursive="false" type="SOURCES" />
   </library>
 </component>

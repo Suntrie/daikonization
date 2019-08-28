@@ -1,11 +1,11 @@
 <component name="libraryTable">
   <library name="daikon">
     <CLASSES>
-      <root url="jar://$PROJECT_DIR$/lib/daikon.jar!/" />
+      <root url="jar://$USER_HOME$/new_daikon/daikon-5.7.2/daikon.jar!/" />
     </CLASSES>
     <JAVADOC />
     <SOURCES>
-      <root url="jar://$PROJECT_DIR$/lib/daikon.jar!/" />
+      <root url="jar://$USER_HOME$/new_daikon/daikon-5.7.2/daikon.jar!/" />
     </SOURCES>
   </library>
 </component>

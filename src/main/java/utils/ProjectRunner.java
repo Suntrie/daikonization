@@ -6,32 +6,38 @@ import org.apache.maven.model.io.xpp3.MavenXpp3Writer;
 import org.codehaus.plexus.util.xml.Xpp3Dom;
 import org.codehaus.plexus.util.xml.pull.XmlPullParserException;
 
-import java.io.*;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Properties;
-import java.util.stream.Collectors;
 
 import static utils.CommandExecutors.executeMaven;
 import static utils.CommandExecutors.getPathThroughProps;
 
-public abstract class MavenProjectUtils {
+public class ProjectRunner {
 
-    protected final String evosuitePath = System.getenv("EVOSUITE") + "/evosuite-1.0.6.jar";
-    protected final String daikonPath = System.getenv("DAIKONDIR") + "/daikon.jar";
+    public static final String randoopPath = System.getenv("RANDOOP_JAR");
+    public static final String daikonPath = System.getenv("DAIKONDIR") + "/daikon.jar";
 
     protected Map<String, Path> projectDirs = new HashMap<>();
 
+
+    public Long getTimestamp() {
+        return timestamp;
+    }
 
     protected Long timestamp = System.currentTimeMillis();
     protected Long incCounter = timestamp;
     protected File pomFile;
     protected Model model;
 
-    public MavenProjectUtils(String baseDir) throws IOException, XmlPullParserException {
+    public ProjectRunner(String baseDir) throws IOException, XmlPullParserException {
         projectDirs.put("baseDir", Paths.get(baseDir));
 
         pomFile = new File(baseDir, "/pom.xml");
@@ -61,7 +67,7 @@ public abstract class MavenProjectUtils {
         addProperties(new HashMap<String, String>() {{
             put("outputDirectory", "${project.build.outputDirectory}");
             put("testOutputDirectory", "${project.build.testOutputDirectory}");
-            put("testSourceDirectory", "${basedir}/.evosuite/best-tests");
+            put("testSourceDirectory", "${project.build.testSourceDirectory}");
         }});
 
 
@@ -106,7 +112,7 @@ public abstract class MavenProjectUtils {
             boolean previous = false;
 
             for (Dependency dependency1 : model.getDependencies()) {
-                if (dependency1.getGroupId().equals(dependency.getGroupId())&&
+                if (dependency1.getGroupId().equals(dependency.getGroupId()) &&
                         dependency1.getArtifactId().equals(dependency.getArtifactId())) {
                     dependency.setVersion(version1);
                     previous = true;
@@ -141,9 +147,9 @@ public abstract class MavenProjectUtils {
                 result[0] = plugin;
             } else {
 
-               for (Plugin plugin1 : model.getBuild().getPlugins()) {
+                for (Plugin plugin1 : model.getBuild().getPlugins()) {
                     if (plugin1.equals(plugin)) {
-                        result[0] =plugin;
+                        result[0] = plugin;
                         return;
                     }
                 }
@@ -164,10 +170,10 @@ public abstract class MavenProjectUtils {
             Build build = model.getBuild();
 
             if (build == null)
-                throw  new  IOException();
+                throw new IOException();
 
             if (!model.getBuild().getPlugins().contains(plugin)) {
-                throw  new  IOException();
+                throw new IOException();
             } else {
 
                 for (Plugin plugin1 : model.getBuild().getPlugins()) {
@@ -176,7 +182,7 @@ public abstract class MavenProjectUtils {
                     }
                 }
 
-                if (pomPlugin==null)
+                if (pomPlugin == null)
                     throw new IOException("No such plugin");
 
                 pluginExecution.setId(String.valueOf(incCounter));
@@ -185,7 +191,7 @@ public abstract class MavenProjectUtils {
 
             }
         }, null, null, null);
-        return  pluginExecution;
+        return pluginExecution;
     }
 
 
@@ -232,9 +238,10 @@ public abstract class MavenProjectUtils {
                 Xpp3Dom configurationEx = (Xpp3Dom) plugin.getConfiguration();
 
 
-                if (configurationEx!= null){
-                target = configurationEx.getChild("target");
-                source = configurationEx.getChild("source");}
+                if (configurationEx != null) {
+                    target = configurationEx.getChild("target");
+                    source = configurationEx.getChild("source");
+                }
             }
         }
 
@@ -259,4 +266,51 @@ public abstract class MavenProjectUtils {
         addPluginExecution(plugin, pluginExecution1);
         return addPluginExecution(plugin, pluginExecution2);
     }
+
+    protected String getFullClassPathForProjectExploration() throws IOException {
+
+        String propertiesFileName = "classpath.txt";
+
+        String classpath = new String(Files.readAllBytes(Paths.get(String.valueOf(projectDirs.get("baseDir")), propertiesFileName)));
+
+        String testsOutputDirectory = projectDirs.get("testOutputDirectory").toAbsolutePath().toString();
+        String outputDirectory = projectDirs.get("outputDirectory").toAbsolutePath().toString();
+
+        return classpath.concat(File.pathSeparator).
+                concat(testsOutputDirectory).concat(File.pathSeparator).
+                concat(outputDirectory).concat(File.pathSeparator).
+                concat(daikonPath);
+    }
+
+    public boolean prepareProject() throws IOException, XmlPullParserException {
+        PluginExecution pluginExecution = new PluginExecution();
+        pluginExecution.addGoal("build-classpath");
+        pluginExecution.setPhase("generate-sources");
+
+        String propertiesFileName = "classpath.txt";
+
+        final Xpp3Dom configuration = new Xpp3Dom("configuration");
+        final Xpp3Dom quiet = new Xpp3Dom("outputFile");
+        quiet.setValue(propertiesFileName);
+        configuration.addChild(quiet);
+
+        pluginExecution.setConfiguration(configuration);
+
+        Plugin plugin = addPlugin("org.apache.maven.plugins",
+                "maven-dependency-plugin", "2.9");
+
+        addPluginExecution(plugin, pluginExecution);
+
+
+        return executeMaven(projectDirs.get("baseDir"),
+                new String[]{"install"}); //due to Maven projects
+
+    }
+
+    public boolean buildProject(){
+        return executeMaven(projectDirs.get("baseDir"),
+                new String[]{"package"});
+
+    }
+
 }
