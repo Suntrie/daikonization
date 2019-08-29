@@ -1,26 +1,25 @@
 package predicatesGenerator;
 
 import com.repoMiner.AetherTreeConstructor;
-import daikon.DaikonSimple;
 import daikon.FileIO;
 import daikon.PptMap;
-import org.codehaus.plexus.util.xml.pull.XmlPullParserException;
-import utils.ProjectRunner;
+import daikon.PptTopLevel;
+import utils.MavenProjectRunner;
 
-import java.io.*;
-import java.lang.reflect.Method;
+import java.io.File;
+import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
 
-import static daikon.Daikon.setup_proto_invs;
-import static java.lang.System.out;
 import static utils.CommandExecutors.*;
 
-public class DaikonRunner extends ProjectRunner {
+public class DaikonRunner {
 
-    public DaikonRunner(String baseDir) throws IOException, XmlPullParserException {
-        super(baseDir);
+    private MavenProjectRunner projectRunner;
+
+    public DaikonRunner(MavenProjectRunner projectRunner) {
+        this.projectRunner = projectRunner;
     }
 
     public static final String pathToDaikonInvariantsConf = "config/Invariants_conf";
@@ -29,8 +28,6 @@ public class DaikonRunner extends ProjectRunner {
 
         AetherTreeConstructor aetherTreeConstructor = new AetherTreeConstructor
                 ("\\home\\suntrie\\.m2\\repository");   //TODO: config
-
-        Set<Method> methodSet = new HashSet<>();
 
         Set<String> filters = new HashSet<>();
         filters.add("java.lang");
@@ -42,17 +39,17 @@ public class DaikonRunner extends ProjectRunner {
             return Optional.empty();
 
 
-        Path dTracePath = null, mainClassPath;
+        Path dTracePath, mainClassPath;
 
-        Set<Path> drivers = fileSearch(".*Driver.*\\.class", projectDirs.get("testOutputDirectory"));
+        Set<Path> drivers = fileSearch(".*Driver.*\\.class", projectRunner.getProjectDirs().get("testOutputDirectory"));
 
         if (!drivers.iterator().hasNext()) {
-            return Optional.ofNullable(dTracePath);
+            return Optional.empty();
         } else {
             mainClassPath = drivers.iterator().next();
         }
 
-        String mainClassName = stripExtension(String.valueOf(projectDirs.get("testOutputDirectory").toAbsolutePath()
+        String mainClassName = stripExtension(String.valueOf(projectRunner.getProjectDirs().get("testOutputDirectory").toAbsolutePath()
                 .relativize(mainClassPath))).replace('/', '.');
 
         //to get comparability sets
@@ -63,9 +60,9 @@ public class DaikonRunner extends ProjectRunner {
         String comparabilityFileName = "comparability_set.decls-DynComp";
         String traceFileName = "chicory_trace.dtrace.gz";
 
-        String pathToClassDirectory = projectDirs.get("testOutputDirectory").toAbsolutePath().toString();
+        String pathToClassDirectory = projectRunner.getProjectDirs().get("testOutputDirectory").toAbsolutePath().toString();
 
-        String fullProjectClassPath = getFullClassPathForProjectExploration();
+        String fullProjectClassPath = projectRunner.getFullClassPathForProjectExploration();
 
         List<String> cmd = new LinkedList<String>();
         cmd.add("java");
@@ -89,7 +86,7 @@ public class DaikonRunner extends ProjectRunner {
         cmd.addAll(pptSelectPatterns);
 
         if (!executeTerminal(String.join(" ", cmd))) {
-            return Optional.ofNullable(dTracePath);
+            return Optional.empty();
         }
 
         cmd.clear();
@@ -98,7 +95,7 @@ public class DaikonRunner extends ProjectRunner {
         cmd.add(fullProjectClassPath);
         cmd.add("daikon.Chicory");
         cmd.add("--comparability-file");
-        cmd.add(projectDirs.get("testOutputDirectory") + "/" + comparabilityFileName);
+        cmd.add(projectRunner.getProjectDirs().get("testOutputDirectory") + "/" + comparabilityFileName);
         cmd.add("--output-dir");
         cmd.add(pathToClassDirectory);
 
@@ -111,58 +108,53 @@ public class DaikonRunner extends ProjectRunner {
 
 
         if (!executeTerminal(String.join(" ", cmd))) {
-            return Optional.ofNullable(dTracePath);
+            return Optional.empty();
         }
 
         dTracePath = Paths.get(pathToClassDirectory, traceFileName);
 
-        return Optional.ofNullable(dTracePath);
+        return Optional.of(dTracePath);
     }
 
-    private PptMap getInvariantsPptMap(Path dataTraceFullPath) {
+    private boolean getInvariantsPptMap(Path dataTraceFullPath, Path pptMapFile) {
 
-        setup_proto_invs();
+        List<String> cmd = new LinkedList<String>();
+        cmd.add("java");
+        cmd.add("-classpath");
+        cmd.add(MavenProjectRunner.daikonPath);
+        cmd.add("daikon.Daikon");
+        cmd.add(String.valueOf(dataTraceFullPath));
 
-        BufferedReader objReader = null;
-        try {
-            objReader = new BufferedReader(new FileReader(pathToDaikonInvariantsConf));
-        } catch (FileNotFoundException e) {
-            out.println(e.getMessage()); //TODO
-            return null;
-        }
+        cmd.add("--omit_from_output");
+        cmd.add("0rs");
+        cmd.add("--disable-all-invariants");
 
-        String configLine;
+        cmd.add("--config");
+        cmd.add(pathToDaikonInvariantsConf);
 
-        int i = 0;
-        PptMap ppts = new PptMap();
+        cmd.add("-o");
+        cmd.add(String.valueOf(pptMapFile));
 
-        try {
-
-           /* while ((configLine = objReader.readLine()) != null) {
-                daikon.config.Configuration.getInstance().apply(configLine);
-            }*/
-
-            FileIO.read_data_trace_files(Arrays.asList(String.valueOf(dataTraceFullPath)), ppts,
-                    new DaikonSimple.SimpleProcessor(), false);
-
-        } catch (IOException e) {
-            out.println(e.getMessage()); //TODO
-            return null;
-        }
-
-        return ppts;
+        return executeTerminal(String.join(" ", cmd));
     }
 
-    public PptMap generateInvariantsPptMap(String libraryCoords) throws IOException, XmlPullParserException {
+    public Optional<PptMap> generateInvariantsPptMap(String libraryCoords, Path invariantsFilePath) throws IOException {
 
         Optional<Path> pathToDataTraceFile = this.generateDataForExploration(libraryCoords);
 
-        if (!pathToDataTraceFile.isPresent())
-            return null;
+        if (!pathToDataTraceFile.isPresent() || !this.getInvariantsPptMap(pathToDataTraceFile.get(), invariantsFilePath))
+            return Optional.empty();
 
-        return this.getInvariantsPptMap(pathToDataTraceFile.get());
+        PptMap pptMap = new PptMap();
+
+        pptMap=FileIO.read_serialized_pptmap(new File(String.valueOf(invariantsFilePath)), true);
+
+        for (PptTopLevel ppt : pptMap.all_ppts()) {
+            if (ppt.getInvariants().size() != 0)
+                System.out.print("");
+        }
+
+        return Optional.of(pptMap);
     }
-
-    ;
 
 }

@@ -1,9 +1,7 @@
 package testsGenerator;
 
 import com.repoMiner.AetherTreeConstructor;
-import daikon.inv.binary.sequenceScalar.SeqFloatLessEqual;
-import org.codehaus.plexus.util.xml.pull.XmlPullParserException;
-import utils.ProjectRunner;
+import utils.MavenProjectRunner;
 
 import java.io.File;
 import java.io.IOException;
@@ -11,11 +9,12 @@ import java.util.*;
 
 import static utils.CommandExecutors.executeTerminal;
 
-public class RandoopRunner extends ProjectRunner {
+public class RandoopRunner{
 
-    public RandoopRunner(String baseDir)
-            throws IOException, XmlPullParserException {
-        super(baseDir);
+    private MavenProjectRunner projectRunner;
+
+    public RandoopRunner(MavenProjectRunner projectRunner) {
+        this.projectRunner = projectRunner;
     }
 
     public boolean generateTests() throws IOException {
@@ -25,9 +24,9 @@ public class RandoopRunner extends ProjectRunner {
         cmd.add("java");
         cmd.add("-classpath");
 
-        String classPath = getFullClassPathForProjectExploration();
+        String classPath = projectRunner.getFullClassPathForProjectExploration();
 
-        classPath=classPath.concat(File.pathSeparator).concat(randoopPath);
+        classPath=classPath.concat(File.pathSeparator).concat(MavenProjectRunner.randoopPath);
 
         cmd.add(classPath);
 
@@ -41,7 +40,7 @@ public class RandoopRunner extends ProjectRunner {
         filters.add("java.lang");
 
         Optional<Set<Class>> projectClasses=aetherTreeConstructor.getPackageClasses(
-                getMavenCoords(), filters);
+                projectRunner.getMavenCoords(), filters);
 
         if (!projectClasses.isPresent())
             return false;
@@ -57,13 +56,9 @@ public class RandoopRunner extends ProjectRunner {
         cmd.add("--maxsize=100");
         cmd.add("--only-test-public-members");
         cmd.add("--stop-on-error-test=true");
-        cmd.add("--junit-output-dir="+projectDirs.get("testSourceDirectory"));
+        cmd.add("--junit-output-dir="+projectRunner.getProjectDirs().get("testSourceDirectory"));
 
-        if (!executeTerminal(String.join(" ", cmd))) {
-            return false;
-        }
-
-        return true;
+        return executeTerminal(String.join(" ", cmd));
     }
 
 }

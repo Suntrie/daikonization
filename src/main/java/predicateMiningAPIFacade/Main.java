@@ -1,27 +1,25 @@
 package predicateMiningAPIFacade;
 
-import daikon.FileIO;
-import daikon.PptMap;
-import daikon.PptTopLevel;
-import daikon.inv.Invariant;
 import org.codehaus.plexus.util.xml.pull.XmlPullParserException;
 import org.kohsuke.args4j.CmdLineException;
 import org.kohsuke.args4j.CmdLineParser;
 import org.kohsuke.args4j.Option;
 import predicatesGenerator.DaikonRunner;
 import testsGenerator.RandoopRunner;
-import utils.ProjectRunner;
+import utils.MavenProjectRunner;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 import java.util.logging.Logger;
 
 import static utils.CommandExecutors.executeTerminal;
 
-public class Main extends ProjectRunner {
+public class Main extends MavenProjectRunner {
 
     private static Logger logger = Logger.getLogger(Main.class.getSimpleName());
 
@@ -35,8 +33,6 @@ public class Main extends ProjectRunner {
     //"/home/suntrie/IdeaProjects/jackson-example/jackson-example";
 
     public static void main(String[] args) throws IOException, XmlPullParserException {
-
-//        new RandoopRunner("/home/suntrie/IdeaProjects/jackson-example/jackson-example").generateTests();
 
         Params params = new Params();
 
@@ -54,38 +50,34 @@ public class Main extends ProjectRunner {
     }
 
 
+    public static boolean update_ppt_map(String libraryName, String invariantsFilePath, String projectPath)
+            throws IOException, XmlPullParserException {
 
-    public static boolean update_ppt_map(String libraryName, String invariantsFilePath, String projectPath){
-        try {
 
-            ProjectRunner projectRunner = new ProjectRunner(projectPath);
+        MavenProjectRunner projectRunner = new MavenProjectRunner(projectPath);
 
-            if (!projectRunner.prepareProject())
-                return false;
+        if (!projectRunner.prepareAndInstallProject())
+            return false;
 
-            RandoopRunner randoopRunner = new RandoopRunner(projectPath);
-            randoopRunner.generateTests();
+        RandoopRunner randoopRunner = new RandoopRunner(projectRunner);
+        randoopRunner.generateTests();
 
-            if (!projectRunner.buildProject())
-                return false;
+        if (!projectRunner.buildProject())
+            return false;
 
-            PptMap pptMap = new DaikonRunner(projectPath).generateInvariantsPptMap(libraryName);
+        int firstPointPosition = invariantsFilePath.substring(0, invariantsFilePath.lastIndexOf('.')).lastIndexOf('.');
 
-            for (PptTopLevel ppt:pptMap.all_ppts()){
-                for (Invariant inv: ppt.getInvariants())
-                    System.out.println(inv);
-            }
+        String newInvariantsFilePath = invariantsFilePath.substring(0, firstPointPosition);
+        String postfix = invariantsFilePath.substring(firstPointPosition);
+
+        newInvariantsFilePath = newInvariantsFilePath + "_" + projectRunner.getTimestamp() + postfix;
+
+        if ((new DaikonRunner(projectRunner).generateInvariantsPptMap(libraryName, Paths.get(newInvariantsFilePath))).isPresent()) {
 
             File previousInvariantsFile = new File(invariantsFilePath);
 
-            if (!previousInvariantsFile.exists()) {
-                FileIO.write_serialized_pptmap(pptMap, new File(invariantsFilePath));
-            }
-            else{
+            if (previousInvariantsFile.exists()) {
 
-                String newInvariantsFilePath = invariantsFilePath+"_"+projectRunner.getTimestamp();
-
-                FileIO.write_serialized_pptmap(pptMap, new File(newInvariantsFilePath));
                 List<String> cmd = new ArrayList<>();
 
                 cmd.add("java");
@@ -93,7 +85,7 @@ public class Main extends ProjectRunner {
 
                 cmd.add(daikonPath);
 
-                cmd.add("daikonMergeInvariants");
+                cmd.add("daikon.MergeInvariants");
                 cmd.add("-o");
                 cmd.add(invariantsFilePath);
                 cmd.add(invariantsFilePath);
@@ -102,26 +94,32 @@ public class Main extends ProjectRunner {
                 if (!executeTerminal(String.join(" ", cmd))) {
                     return false;
                 }
+
+                if (!new File(newInvariantsFilePath).delete()){
+                    logger.severe("Invariants temporary file wasn't deleted.");
+                }
+
+            }else{
+                Path source = Paths.get(newInvariantsFilePath);
+                Files.move(source, source.resolveSibling(invariantsFilePath));
             }
 
-        } catch (IOException | XmlPullParserException e) {
-            logger.severe(e.getMessage());
+        } else
             return false;
-        }
 
         return true;
     }
 
-    private static class Params{
+    private static class Params {
 
-            @Option(name = "-projectPath", usage = "Path to the project that uses library-in-hand")
-            String projectPath;
+        @Option(name = "-projectPath", usage = "Path to the project that uses library-in-hand")
+        String projectPath;
 
-            @Option(name = "-libraryName", usage = "Name of library in-hand")
-            String libraryName;
+        @Option(name = "-libraryName", usage = "Name of library in-hand")
+        String libraryName;
 
-            @Option(name = "-pptMapPath", usage = "Path to the predicates file")
-            String pptMapPath;
+        @Option(name = "-pptMapPath", usage = "Path to the predicates file")
+        String pptMapPath;
 
     }
 

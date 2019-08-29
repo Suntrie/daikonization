@@ -9,17 +9,17 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.text.SimpleDateFormat;
 import java.util.*;
-
-import static java.lang.System.out;
+import java.util.logging.Logger;
 
 public class CommandExecutors {
 
+    private static Logger logger = Logger.getLogger(CommandExecutors.class.getSimpleName());
     private static SimpleDateFormat simpleDateFormat = new SimpleDateFormat("yyyy-MM-dd hh:mm:ss");
 
     private static void setTimestamp(TimsestampType timestampType) {
-        out.println(timestampType);
-        out.println(simpleDateFormat.format(new Date()));
-        out.println("---------------------------------");
+        logger.info(String.valueOf(timestampType));
+        logger.info(simpleDateFormat.format(new Date()));
+        logger.info("---------------------------------");
     }
 
     private enum TimsestampType {
@@ -29,7 +29,7 @@ public class CommandExecutors {
 
     public static boolean executeTerminal(String cmd, Boolean redirect, String nameOfSrcFilesList) {
 
-        out.println("Exec: " + cmd);
+        logger.info("Exec: " + cmd);
 
         setTimestamp(TimsestampType.START);
 
@@ -51,7 +51,7 @@ public class CommandExecutors {
             setTimestamp(TimsestampType.END);
 
         } catch (Exception e) {
-            e.printStackTrace(System.err);
+            logger.severe(e.getMessage());
             return false;
         }
 
