@@ -74,7 +74,7 @@ public class DaikonRunner {
         cmd.add(pathToClassDirectory);
         cmd.add("--decl-file");
         cmd.add(comparabilityFileName);
-        cmd.add("--std-visibility");
+        //cmd.add("--std-visibility");
 
 
         List<String> pptSelectPatterns = new ArrayList<String>() {{
@@ -104,7 +104,8 @@ public class DaikonRunner {
         cmd.add("--dtrace-file");
         cmd.add(traceFileName);
         cmd.add(mainClassName);
-        cmd.add("--trace_line_depth=5");
+        cmd.add("--trace_line_depth=100");
+        cmd.add("--nesting-depth=100");
 
 
         if (!executeTerminal(String.join(" ", cmd))) {
@@ -128,6 +129,7 @@ public class DaikonRunner {
         cmd.add("--omit_from_output");
         cmd.add("0rs");
         cmd.add("--disable-all-invariants");
+        //cmd.add("--format Java");
 
         cmd.add("--config");
         cmd.add(pathToDaikonInvariantsConf);
@@ -147,7 +149,8 @@ public class DaikonRunner {
 
         PptMap pptMap = new PptMap();
 
-        pptMap=FileIO.read_serialized_pptmap(new File(String.valueOf(invariantsFilePath)), true);
+        if (new File(String.valueOf(invariantsFilePath)).exists())
+            pptMap=FileIO.read_serialized_pptmap(new File(String.valueOf(invariantsFilePath)), true);
 
         for (PptTopLevel ppt : pptMap.all_ppts()) {
             if (ppt.getInvariants().size() != 0)

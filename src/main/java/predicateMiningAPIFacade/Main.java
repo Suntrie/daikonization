@@ -1,5 +1,7 @@
 package predicateMiningAPIFacade;
 
+import com.google.inject.internal.util.$Preconditions;
+import daikon.PptMap;
 import org.codehaus.plexus.util.xml.pull.XmlPullParserException;
 import org.kohsuke.args4j.CmdLineException;
 import org.kohsuke.args4j.CmdLineParser;
@@ -10,11 +12,13 @@ import utils.MavenProjectRunner;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.InvalidObjectException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.logging.Logger;
 
 import static utils.CommandExecutors.executeTerminal;
@@ -46,7 +50,27 @@ public class Main extends MavenProjectRunner {
             return;
         }
 
-        update_ppt_map(params.libraryName, params.pptMapPath, params.projectPath);
+        File[] result = new File(params.baseRepositoryDirectory).listFiles();
+        for (File directory : result) {
+            String path = directory.getPath();
+            try {
+
+                logger.info("++++++++++++++++++++++++++++++++++"+"PROJECT: "+path+"++++++++++++++++++++++++++++++++++");
+                //String path = directory.getPath();
+                 //       "/home/suntrie/GitHub/repoMinerDownloader/MinedProjects/randerzander-CurveUDFs-4275745";
+                update_ppt_map(params.libraryName, params.pptMapPath, path);
+               // break;
+            }catch(Exception e){                  //InvalidObjectException
+                logger.info("-----------------------------------"+"PROJECT: "+path+"-----------------------------------");
+
+                logger.severe(e.getMessage());
+                continue;
+            }
+
+            logger.info("SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS"+"PROJECT: "+path+"SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS");
+        }
+
+
     }
 
 
@@ -72,7 +96,9 @@ public class Main extends MavenProjectRunner {
 
         newInvariantsFilePath = newInvariantsFilePath + "_" + projectRunner.getTimestamp() + postfix;
 
-        if ((new DaikonRunner(projectRunner).generateInvariantsPptMap(libraryName, Paths.get(newInvariantsFilePath))).isPresent()) {
+        Optional<PptMap> pptMap =new DaikonRunner(projectRunner).generateInvariantsPptMap(libraryName, Paths.get(newInvariantsFilePath));
+
+        if (pptMap.isPresent()&&pptMap.get().size()!=0) {
 
             File previousInvariantsFile = new File(invariantsFilePath);
 
@@ -95,11 +121,11 @@ public class Main extends MavenProjectRunner {
                     return false;
                 }
 
-                if (!new File(newInvariantsFilePath).delete()){
+                if (!new File(newInvariantsFilePath).delete()) {
                     logger.severe("Invariants temporary file wasn't deleted.");
                 }
 
-            }else{
+            } else {
                 Path source = Paths.get(newInvariantsFilePath);
                 Files.move(source, source.resolveSibling(invariantsFilePath));
             }
@@ -112,14 +138,17 @@ public class Main extends MavenProjectRunner {
 
     private static class Params {
 
-        @Option(name = "-projectPath", usage = "Path to the project that uses library-in-hand")
-        String projectPath;
+      /*  @Option(name = "-projectPath", usage = "Path to the project that uses library-in-hand")
+        String projectPath;*/
 
         @Option(name = "-libraryName", usage = "Name of library in-hand")
         String libraryName;
 
         @Option(name = "-pptMapPath", usage = "Path to the predicates file")
         String pptMapPath;
+
+        @Option(name = "-baseRepositoryDirectory", usage = "Directory for code storage")
+        String baseRepositoryDirectory;
 
     }
 

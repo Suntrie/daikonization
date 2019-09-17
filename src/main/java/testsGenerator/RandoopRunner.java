@@ -51,9 +51,10 @@ public class RandoopRunner{
 
         cmd.add("--junit-reflection-allowed=false");
         cmd.add("--no-error-revealing-tests=true");
+        cmd.add("--flaky-test-behavior=DISCARD");
         cmd.add("--check-compilable");
-        cmd.add("--output-limit=100");
-        cmd.add("--maxsize=100");
+        cmd.add("--output-limit=2000");
+        cmd.add("--maxsize=1000");
         cmd.add("--only-test-public-members");
         cmd.add("--stop-on-error-test=true");
         cmd.add("--junit-output-dir="+projectRunner.getProjectDirs().get("testSourceDirectory"));

@@ -6,16 +6,11 @@ import org.apache.maven.model.io.xpp3.MavenXpp3Writer;
 import org.codehaus.plexus.util.xml.Xpp3Dom;
 import org.codehaus.plexus.util.xml.pull.XmlPullParserException;
 
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.IOException;
+import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Properties;
+import java.util.*;
 
 import static utils.CommandExecutors.executeMaven;
 import static utils.CommandExecutors.getPathThroughProps;
@@ -51,6 +46,9 @@ public class MavenProjectRunner {
     }
 
     private void initializeTestsDir() throws IOException, XmlPullParserException {
+
+        addDependency("junit","junit","4.12");
+
         PluginExecution pluginExecution = new PluginExecution();
         pluginExecution.addGoal("write-project-properties");
         pluginExecution.setPhase("initialize");
@@ -76,8 +74,8 @@ public class MavenProjectRunner {
 
         Path baseDir = projectDirs.get("baseDir");
 
-        executeMaven(baseDir,
-                new String[]{"initialize"});
+        boolean init=executeMaven(baseDir,
+                new String[]{"generate-sources"});
 
         Map<String, Path> propsDirs = getPathThroughProps(Paths.get(String.valueOf(baseDir), propertiesFileName));
         projectDirs.putAll(propsDirs);
@@ -216,6 +214,10 @@ public class MavenProjectRunner {
             model.getProperties().setProperty(entry.getKey(), entry.getValue());
         }
 
+        saveModel();
+    }
+
+    private void saveModel() throws IOException {
         MavenXpp3Writer writer = new MavenXpp3Writer();
         writer.write(new FileOutputStream(pomFile), model);
     }
@@ -225,17 +227,26 @@ public class MavenProjectRunner {
         String propertiesFileName = "classpath.txt";
 
         String classpath = new String(Files.readAllBytes(Paths.get(String.valueOf(projectDirs.get("baseDir")), propertiesFileName)));
+        StringBuilder filteredClassPath = new StringBuilder();
+
+        List<String> classPathList = Arrays.asList(classpath.split(File.pathSeparator));
+
+        for (String classPathElement: classPathList){
+            if (classPathElement.endsWith(".jar"))
+                filteredClassPath.append(classPathElement).append(File.pathSeparator);
+        }
 
         String testsOutputDirectory = projectDirs.get("testOutputDirectory").toAbsolutePath().toString();
         String outputDirectory = projectDirs.get("outputDirectory").toAbsolutePath().toString();
 
-        return classpath.concat(File.pathSeparator).
+        return filteredClassPath.toString().
                 concat(testsOutputDirectory).concat(File.pathSeparator).
                 concat(outputDirectory).concat(File.pathSeparator).
                 concat(daikonPath);
     }
 
     public boolean prepareAndInstallProject() throws IOException {
+
         PluginExecution pluginExecution = new PluginExecution();
         pluginExecution.addGoal("build-classpath");
         pluginExecution.setPhase("generate-sources");
@@ -255,12 +266,34 @@ public class MavenProjectRunner {
         addPluginExecution(plugin, pluginExecution);
 
 
+        final Xpp3Dom configuration1 = new Xpp3Dom("configuration");
+        final Xpp3Dom quiet1 = new Xpp3Dom("debug");
+        quiet1.setValue("true");
+        configuration1.addChild(quiet1);
+
+
+        Plugin plugin1 = addPlugin("org.apache.maven.plugins",
+                "maven-compiler-plugin", "3.8.1");
+
+        Xpp3Dom oldConfig= (Xpp3Dom) plugin1.getConfiguration();
+
+        if (oldConfig==null)
+            plugin1.setConfiguration(configuration1);
+        else
+            oldConfig.addChild(quiet1);
+
+        saveModel();
+
+        /*executeMaven(projectDirs.get("baseDir"),
+                new String[]{"clean"});*/
+
+
         return executeMaven(projectDirs.get("baseDir"),
                 new String[]{"install"}); //due to Maven projects
 
     }
 
-    public boolean buildProject(){
+    public boolean buildProject() throws InvalidObjectException {
         return executeMaven(projectDirs.get("baseDir"),
                 new String[]{"package"});
 

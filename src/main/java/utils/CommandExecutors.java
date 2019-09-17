@@ -5,6 +5,7 @@ import org.apache.maven.cli.MavenCli;
 import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
+import java.io.InvalidObjectException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.text.SimpleDateFormat;
@@ -61,16 +62,22 @@ public class CommandExecutors {
         return executeTerminal(cmd, false, "");
     }
 
-    public static boolean executeMaven(Path workingDir, String[] commands){
-        MavenCli cli = new MavenCli();
+    public static boolean executeMaven(Path workingDir, String[] commands) throws InvalidObjectException {
+
+        executeTerminal("mvn "+String.join("", commands));
+
+        return true;
+       /* MavenCli cli = new MavenCli();
         int exitCode = cli.doMain(
                 commands,
                 workingDir.toString(),
                 System.out,
                 System.err
-        );
+        );*/
 
-        return exitCode == 0;
+        //if (exitCode!=0) throw  new InvalidObjectException("Project isn't compilable: "+workingDir);
+
+        //return exitCode == 0;
     }
 
    public static Map<String, Path> getPathThroughProps(Path props) throws IOException {
